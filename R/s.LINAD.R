@@ -66,15 +66,15 @@ s.LINAD <- function(x, y = NULL,
                     grid.resample.rtset = rtset.resample("kfold", 5),
                     grid.search.type = "exhaustive",
                     save.gridrun = FALSE,
-                    grid.verbose = TRUE,
+                    grid.verbose = FALSE,
                     cluster = FALSE,
                     keep.x = FALSE,
                     simplify = TRUE,
                     cxrcoef = FALSE,
                     n.cores = rtCores,
                     .preprocess = NULL,
-                    verbose = TRUE,
-                    plot.tuning = TRUE,
+                    verbose = FALSE,
+                    plot.tuning = FALSE,
                     verbose.predict = FALSE,
                     trace = 1,
                     x.name = NULL,
@@ -88,7 +88,7 @@ s.LINAD <- function(x, y = NULL,
                     save.mod = FALSE,
                     .gs = FALSE) {
 
-  # [ Intro ] ====
+  # [ INTRO ] ====
   if (missing(x)) {
     print(args(s.LINAD))
     return(invisible(9))
@@ -103,19 +103,19 @@ s.LINAD <- function(x, y = NULL,
   mod.name <- "LINAD"
   leaf.model <- match.arg(leaf.model)
 
-  # [ Dependencies ] ====
+  # [ DEPENDENCIES ] ====
   # ENH: deps for lincoef
   if (!depCheck("glmnet", "rpart", verbose = FALSE)) {
     cat("\n"); stop("Please install dependencies and try again")
   }
 
-  # [ Arguments ] ====
+  # [ ARGUMENTS ] ====
   if (is.null(x.name)) x.name <- getName(x, "x")
   if (is.null(y.name)) y.name <- getName(y, "y")
   lin.type <- match.arg(lin.type)
   # if (.gs && nvmax == 0) lin.type = "none"
 
-  # [ Data ] ====
+  # [ DATA ] ====
   dt <- dataPrepare(x, y, x.test, y.test,
                     ipw = ipw, ipw.type = ipw.type,
                     upsample = upsample,
@@ -166,7 +166,7 @@ s.LINAD <- function(x, y = NULL,
     nvmax <- Filter(function(z) z <= NCOL(x), nvmax)
   }
 
-  # [ Grid Search ] ====
+  # [ GRID SEARCH ] ====
   if (metric == "auto") {
     if (type == "Classification") {
       metric <- "Balanced Accuracy"
@@ -269,6 +269,7 @@ s.LINAD <- function(x, y = NULL,
 
   if (length(nvmax) == 1 && nvmax == 0) lin.type <- "none"
 
+
   mod <- shytreegamleaves(x, y,
                           x.valid = x.valid, y.valid = y.valid,
                           lookback = lookback,
@@ -356,7 +357,7 @@ s.LINAD <- function(x, y = NULL,
                      resample.seed = resample.seed,
                      plot.tuning = plot.tuning)
 
-  # [ Fitted ] ====
+  # [ FITTED ] ====
   if (trace > 1) msg("Getting fitted values...")
   if (type == "Classification") {
     .fitted <- predict(mod, x, type = "all")
@@ -369,7 +370,7 @@ s.LINAD <- function(x, y = NULL,
   error.train <- modError(y, fitted)
   if (verbose) errorSummary(error.train)
 
-  # [ Predicted ] ====
+  # [ PREDICTED ] ====
   predicted <- predicted.prob <- error.test <- NULL
   if (!is.null(x.test)) {
     if (trace > 1) msg("Getting predicted values...")
@@ -395,7 +396,7 @@ s.LINAD <- function(x, y = NULL,
     }
   }
 
-  # [ Outro ] ====
+  # [ OUTRO ] ====
   varimp <- NULL
   # varimp <- if (lin.type == "none") {
   #   numeric()

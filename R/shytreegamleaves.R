@@ -1,7 +1,8 @@
 # shytreegamleaves.R
 # ::rtemis::
-# E.D. Gennatas lambdamd.org
+# Efstathios D. Gennatas egenn.lambdamd.org
 # shytreegamleaves with no-line option
+# max.leaves 1 train on y or resid
 # apply gamma only to splits
 
 #' \pkg{rtemis internal}: Low-level Stepwise Linear Additive Tree procedure
@@ -20,8 +21,8 @@
 #' @param loss.fn Function with arguments \code{y, Fval }
 #' Allows you to define a custom loss function. Defaults to \code{class.loss()} for classification
 #' \code{mse()} for regression
-#' @author E.D. Gennatas
-#' @noRd
+#' @author Efstathios D. Gennatas
+#' @keywords internal
 
 # [[---F1---]] ====
 shytreegamleaves <- function(x, y,
@@ -38,7 +39,7 @@ shytreegamleaves <- function(x, y,
                              gamma = .01,
                              gamma.on.lin = FALSE,
                              select.leaves.smooth = TRUE,
-                             alpha = 1,
+                             alpha = 0,
                              lambda = .01,
                              lambda.seq = NULL,
                              cv.glmnet.nfolds = 5,
@@ -52,14 +53,15 @@ shytreegamleaves <- function(x, y,
                              .rho = TRUE,
                              rho.max = 1000,
                              rho.def = .1,
-                             loss.fn = if (is.factor(y)) class.loss else mse,
+                             loss.fn = if (is.factor(y)) class.loss else if (is.Surv(y)) surv.loss else mse,
                              verbose = TRUE,
                              plot.tuning = TRUE,
                              trace = 0) {
-
+# 
   # [ Arguments ] ====
-  type <- if (is.factor(y))  "Classification" else "Regression"
+  type <- if (is.factor(y))  "Classification" else if (is.Surv(y)) "Survival" else "Regression"
   .class <- type == "Classification"
+  .surv <- is.Surv(y)
   if (.class) {
     ylevels <- levels(y)
     levels(y) <- c(1, -1)
@@ -73,12 +75,12 @@ shytreegamleaves <- function(x, y,
 
   if (is.null(weights)) weights <- rep(1, NROW(y))
 
-  # Specify lookback directly
+  # Changed: Specify lookback directly
   if (lookback && is.null(x.valid) && max.leaves > 1) {
-    stop("You have asked for lookback without providing a validation set.")
+    stop("You have asked for early stopping without providing a validation set.")
   }
 
-  # Check y is not constant ====
+  # [ Check y is not constant ] ====
   if (is.constant(y)) {
     coefs <- rep(0, NCOL(x) + 1)
     names(coefs) <- c("(Intercept)", colnames(x))
@@ -100,7 +102,7 @@ shytreegamleaves <- function(x, y,
     return(.mod)
   }
 
-  # [ Arguments ] ====
+  # [ ARGUMENTS ] ====
   if (NCOL(x) == 1) {
     if (lin.type != "glm") {
       lin.type <- "glm"
@@ -111,7 +113,7 @@ shytreegamleaves <- function(x, y,
 
   # [ GLOBAL ] ====
   g <- new.env()
-  # g$x required by rpart, g$xm used by lincoef
+  # g$x used by rpart, g$xm used by lincoef
   g$x <- x
   # g$xm <- cbind(1, model.matrix(~. - 1, data = x)) # check first 2-level factor incl as Var0 and Var1
   g$xm <- model.matrix(~., data = x)
@@ -151,7 +153,7 @@ shytreegamleaves <- function(x, y,
     # Linear model
     index <- is.na(y)
     coef <- lincoef(x = g$xm[!index, -1, drop = FALSE],
-                    y = y[!index],
+                    y = if (.surv) y[,1][!index] else y[!index],
                     weights = weights[!index],
                     method = lin.type,
                     nvmax = nvmax,
@@ -198,8 +200,10 @@ shytreegamleaves <- function(x, y,
     # '- Init ====
     # scalar: Initial node value
     g$init <- c(log(1 + probability %*% y) - log(1 - probability %*% y)) # 1
-  } else {
-    g$init <- mean(y) # 1
+  } else {#  if (.surv) {
+    #g$init <- 0
+  #} else {
+    g$init <- mean(y)
   }
 
   # vector: Initial observations
@@ -208,10 +212,12 @@ shytreegamleaves <- function(x, y,
   # '- Gradient ====
   if (.class) {
     firstDer <- -2 * g$y / (1 + exp(2 * g$y * Fval)) # n
-  } else {
+  } else if (.surv) {
+    firstDer <- surv.resid(y, Fval)
+  } else{
     firstDer <- -(y - Fval)
   }
-
+  
   resid <- -firstDer # n
 
   # '- Lin1 ====
@@ -567,11 +573,15 @@ splitlineRC <- function(g,
 
   # '- Node ====
   .class <- type == "Classification"
+  .surv <- is.Surv(g$y)
   node <- g$tree[[paste(node.index)]]
   if (.class) {
     firstDer <- -2 * g$y / (1 + exp(2 * g$y * node$Fval)) # n
     resid1 <- -firstDer
-  } else {
+  } else if (.surv) {
+    firstDer <- surv.resid(g$y, node$Fval)
+    resid1 <- -firstDer
+  } else{
     resid1 <- g$y - node$Fval
   }
 
@@ -783,7 +793,10 @@ splitlineRC <- function(g,
     if (.class) {
       firstDer <- -2 * g$y / (1 + exp(2 * g$y * Fval)) # n
       resid2 <- -firstDer
-    } else {
+    }  else if (.surv) {
+      firstDer <- surv.resid(g$y, Fval)
+      resid2 <- -firstDer
+    } else{
       resid2 <- g$y - Fval
     }
 
@@ -946,7 +959,7 @@ splitlineRC <- function(g,
 #' @param trace Integer: 0, 1, or 2. Provides increasing amount to information printed to the
 #' console
 #' @export
-#' @author E.D. Gennatas
+#' @author Efstathios D. Gennatas
 
 predict.shytreegamleaves <- function(object, newdata,
                                      type = c("response", "probability", "all", "step"),
@@ -1103,7 +1116,7 @@ predict.shytreegamleaves <- function(object, newdata,
 #'
 #' @method print shytreegamleaves
 #' @param x \code{shytreegamleaves} object
-#' @author E.D. Gennatas
+#' @author Efstathios D. Gennatas
 #' @export
 
 print.shytreegamleaves <- function(x, ...) {
@@ -1145,6 +1158,34 @@ class.lossw <- function(y, Fval, weights) {
 
 }
 
+surv.loss <- function(y, pred){
+  
+  modError(y, -pred)$concordance
+}
+
+
+# derivate of GBM for Cox (Ridgeway et al)
+surv.resid <- function(y, Fval) {
+  cen <- y[, 2]
+  z <- y[, 1]
+  l = NROW(z)
+  tempDer <- cen
+  dTerm2 <- colSums(outer(z, z, '>=')*exp(Fval))
+  for(i in 1:l){
+    tempDer[i] <- 0
+    aTerm <- 0
+    for(j in 1:l){
+      aTerm = aTerm + (cen[j]*(z[i] >= z[j])*exp(Fval[i]))/dTerm2[j]
+    }
+    tempDer[i] <- cen[i]-aTerm
+  }
+  firstDer <- -tempDer
+}
+
+
+
+
+
 # [[--F6--]] ====
 selectleaves <- function(object,
                          x, y,
@@ -1170,6 +1211,11 @@ selectleaves <- function(object,
       1 - bacc(y, train.estimate.l[[j]]))
     valid.error <- sapply(seq(valid.estimate.l), function(j)
       1 - bacc(y.valid, valid.estimate.l[[j]]))
+  } else if (is.Surv(y)) {
+    train.error <- sapply(seq(train.estimate.l), function(j)
+      1 - surv.loss(y, train.estimate.l[[j]]))
+    valid.error <- sapply(seq(valid.estimate.l), function(j)
+      1 - surv.loss(y.valid, valid.estimate.l[[j]]))
   } else {
     train.error <- sapply(seq(train.estimate.l), function(j)
       mse(y, train.estimate.l[[j]]))
@@ -1178,7 +1224,7 @@ selectleaves <- function(object,
   }
 
   valid.error.smooth <- if (smooth) {
-    # valid.error.smooth <- supsmu(seq(n.leaves), valid.error)$y
+    #valid.error.smooth <- supsmu(seq(n.leaves), valid.error)$y
     valid.error.smooth <- suppressWarnings(loess(valid.error ~ seq(n.leaves))$fitted)
   } else {
     NULL

@@ -37,7 +37,7 @@
 #' @param ... Additional arguments to be passed to \link{resample}
 #'
 #' @author E.D. Gennatas
-#' @noRd
+#' @keywords internal
 
 gridSearchLearn <- function(x, y, mod,
                             grid.params,
@@ -55,13 +55,13 @@ gridSearchLearn <- function(x, y, mod,
                             grid.verbose = FALSE,
                             n.cores = rtCores, ...) {
 
-  # [ Intro ] ====
+  # [ INTRO ] ====
   start.time <- intro(verbose = verbose,
                       call.depth = call.depth,
                       message = "Running grid search...",
                       newline.pre = TRUE)
 
-  # [ Arguments ] ====
+  # [ ARGUMENTS ] ====
   if (missing(x) | missing(y)) {
     print(args(gridSearchLearn))
     stop("Input missing")
@@ -70,7 +70,7 @@ gridSearchLearn <- function(x, y, mod,
   n.resamples <- resample.rtset$n.resamples
   n.cores <- as.numeric(n.cores)[1]
 
-  # [ Data ] ====
+  # [ DATA ] ====
   x <- as.data.frame(x)
 
   # [ GRID ] ====
@@ -162,12 +162,13 @@ gridSearchLearn <- function(x, y, mod,
     } else if (type == "Regression") {
       metric <- "MSE"
     } else {
-      metric <- "Concordance"
+      #metric <- "Concordance"
+      metric <- "concordance.concordant"
     }
   }
 
   if (is.null(maximize)) {
-    maximize <- if (metric %in% c("Accuracy", "Balanced Accuracy", "Concordance")) TRUE else FALSE
+    maximize <- if (metric %in% c("Accuracy", "Balanced Accuracy", "Concordance", "concordance.concordant")) TRUE else FALSE
   }
   select.fn <- if (maximize) which.max else which.min
   verb <- if (maximize) "maximize" else "minimize"
@@ -175,10 +176,23 @@ gridSearchLearn <- function(x, y, mod,
   # [ AGGREGATE ] ====
   n.params <- length(grid.params)
   # Average test errors
-  if (type %in% c("Regression", "Survival")) {
+  if (type %in% c("Regression")) {
     error.test.all <- as.data.frame(t(sapply(grid.run, function(r) unlist(r$error.test))))
   } else if (type == "Classification") {
     error.test.all <- as.data.frame(t(sapply(grid.run, function(r) unlist(r$error.test$Overall))))
+  } else if (type == "Survival") {
+    error.test.all <- as.data.frame(t(sapply(grid.run, function(r) unlist(r$error.test))))
+    error.test.all <- transform(error.test.all, concordance.concordant = as.numeric(concordance.concordant), 
+                                stats.concordant = as.numeric(stats.concordant),
+                                stats.discordant = as.numeric(stats.discordant),
+                                stats.tied.risk = as.numeric(stats.tied.risk),
+                                stats.tied.time = as.numeric(stats.tied.time),
+                                `stats.std(c-d)` = as.numeric(`stats.std(c-d)`),
+                                `std.err.std(c-d)` = as.numeric(`std.err.std(c-d)`),
+                                n = as.numeric(n))
+    #remove call
+    error.test.all <- subset(error.test.all, select = -call)
+    metric <- "concordance.concordant"
   }
   error.test.all$param.id <- rep(seq_len(n.param.combs), each = n.resamples)
   error.test.mean.by.param.id <- aggregate(error.test.all,
@@ -227,10 +241,13 @@ gridSearchLearn <- function(x, y, mod,
     # ERROR
     est.n.leaves.all <- data.frame(n.leaves = plyr::laply(grid.run, function(x) x$est.n.leaves))
     est.n.leaves.all$param.id <- rep(seq_len(n.param.combs), each = n.resamples)
+    
     est.n.leaves.by.param.id <- aggregate(n.leaves ~ param.id, est.n.leaves.all,
                                           error.aggregate.fn)
     tune.results <- cbind(n.leaves = round(est.n.leaves.by.param.id$n.leaves), tune.results)
     n.params <- n.params + 1
+    
+    
   }
 
   # '- LIHADBOOST ====
@@ -249,8 +266,7 @@ gridSearchLearn <- function(x, y, mod,
                             drop = FALSE]
   if (verbose) parameterSummary(best.tune, title = paste("Best parameters to", verb, metric))
 
-
-  # [ Outro ] ====
+  # [ OUTRO ] ====
   outro(start.time, verbose = verbose)
   gs <- list(type = search.type,
              p = randomized.p,
