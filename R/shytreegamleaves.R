@@ -1213,9 +1213,9 @@ selectleaves <- function(object,
       1 - bacc(y.valid, valid.estimate.l[[j]]))
   } else if (is.Surv(y)) {
     train.error <- sapply(seq(train.estimate.l), function(j)
-      1 - surv.loss(y, train.estimate.l[[j]]))
+      surv.loss(y, train.estimate.l[[j]]))
     valid.error <- sapply(seq(valid.estimate.l), function(j)
-      1 - surv.loss(y.valid, valid.estimate.l[[j]]))
+      surv.loss(y.valid, valid.estimate.l[[j]]))
   } else {
     train.error <- sapply(seq(train.estimate.l), function(j)
       mse(y, train.estimate.l[[j]]))
@@ -1224,8 +1224,8 @@ selectleaves <- function(object,
   }
 
   valid.error.smooth <- if (smooth) {
-    #valid.error.smooth <- supsmu(seq(n.leaves), valid.error)$y
-    valid.error.smooth <- suppressWarnings(loess(valid.error ~ seq(n.leaves))$fitted)
+    valid.error.smooth <- supsmu(seq(n.leaves), valid.error)$y
+    #valid.error.smooth <- suppressWarnings(loess(valid.error ~ seq(n.leaves))$fitted)
   } else {
     NULL
   }
