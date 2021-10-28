@@ -1,7 +1,6 @@
 # dplot3.bar.R
 # ::rtemis::
 # 2019 E.D. Gennatas lambdamd.org
-# add annotations in box https://plotly.com/r/horizontal-bar-charts/
 
 #' Interactive Barplots
 #'
@@ -27,7 +26,7 @@
 #' @param feature.names Character, vector, length = NCOL(x): Feature names. Default = NULL, which uses
 #' \code{colnames(x)}
 #' @param font.size  Float: Font size for all labels. Default = 16
-#' @param font.family Character: Font family to use. Default = "Helvetica Neue"
+#' @param font.family String: Font family to use. Default = "Helvetica Neue"
 #' @param main.col Color: Title color. Default = NULL, determined by theme
 #' @param axes.col Color: Axes color. Default = NULL, determined, by theme
 #' @param labs.col Color: Labels' color. Default = NULL, determined by theme
@@ -48,12 +47,11 @@
 #' @export
 #' @examples
 #' \dontrun{
-#' dplot3.bar(VADeaths, legend.xy = c(0, 1))
-#' dplot3.bar(VADeaths, legend.xy = c(1, 1), legend.xanchor = "left")
+#' dplot3.bar(VADeaths)
 #' # simple individual bars
 #' a <- c(4, 7, 2)
 #' dplot3.bar(a)
-#' # if input is a data.frame, each row is a group and each column is a feature
+#' # if input is a data.frame, each row is a group
 #' b <- data.frame(x = c(3, 5, 7), y = c(2, 1, 8), z = c(4, 5, 2))
 #' rownames(b) <- c("Jen", "Ben", "Ren")
 #' dplot3.bar(b)
@@ -77,14 +75,8 @@ dplot3.bar <-  function(x,
                         hovernames = NULL,
                         feature.names = NULL,
                         font.size = 16,
-                        annotate = FALSE,
-                        annotate.col = theme$labs.col,
                         legend = NULL,
                         legend.col = NULL,
-                        legend.xy = c(1, 1),
-                        legend.orientation = "v",
-                        legend.xanchor = "left",
-                        legend.yanchor = "auto",
                         hline = NULL,
                         hline.col = "#FE4AA3",
                         hline.width = 1,
@@ -182,51 +174,32 @@ dplot3.bar <-  function(x,
     }
   }
 
-  # plot_ly ====
+  # plotly ====
   .group.names <- factor(.group.names, levels = .group.names)
-  plt <- plotly::plot_ly(x = if (horizontal) dat[[1]] else .group.names,
-                         y = if (horizontal) .group.names else dat[[1]],
-                         type = 'bar',
-                         name = .feature.names[1],
-                         text = hovernames[, 1],
-                         marker = list(color = plotly::toRGB(col[1], alpha)),
-                         showlegend = legend)
-  if (p > 1) {
-    for (i in seq_len(p)[-1]) plt <- plotly::add_trace(plt,
-                                                       x = if (horizontal) dat[[i]] else .group.names,
-                                                       y = if (horizontal) .group.names else dat[[i]],
-                                                       name = .feature.names[i],
-                                                       text = hovernames[, i],
-                                                       marker = list(color = plotly::toRGB(col[i], alpha)))
-  }
-
-  if (annotate) {
-    if (barmode != "stack") {
-      warning('Set barmode to "stack" to allow annotation')
-    } else {
-      if (horizontal) {
-        for (i in seq(ncol(dat))) {
-          plt |> plotly::add_annotations(xref = 'x', yref = 'y',
-                                 x = rowSums(dat[, seq_len(i - 1), drop = F]) + dat[, i]/2,
-                                 text = paste(dat[, i]),
-                                 font = list(family = theme$font.family,
-                                             size = font.size,
-                                             color = annotate.col),
-                                 showarrow = FALSE) -> plt
-        }
-      } else {
-        for (i in seq(ncol(dat))) {
-          plt |> plotly::add_annotations(xref = 'x', yref = 'y',
-                                 y = rowSums(dat[, seq_len(i - 1), drop = F]) + dat[, i]/2,
-                                 text = paste(signif(dat[, i], 2)),
-                                 font = list(family = theme$font.family,
-                                             size = font.size,
-                                             color = annotate.col),
-                                 showarrow = FALSE) -> plt
-        }
-      }
+  if (horizontal) {
+    plt <- plotly::plot_ly(x = dat[, 1], y = .group.names,
+                           type = 'bar',
+                           name = .feature.names[1],
+                           text = hovernames[, 1],
+                           marker = list(color = plotly::toRGB(col[1], alpha)))
+    if (p > 1) {
+      for (i in seq_len(p)[-1]) plt <- plotly::add_trace(plt, x = dat[, i],
+                                                         name = .feature.names[i],
+                                                         text = hovernames[, i],
+                                                         marker = list(color = plotly::toRGB(col[i], alpha)))
     }
-
+  } else {
+    plt <- plotly::plot_ly(x = .group.names, y = dat[, 1],
+                           type = 'bar',
+                           name = .feature.names[1],
+                           text = hovernames[, 1],
+                           marker = list(color = plotly::toRGB(col[1], alpha)))
+    if (p > 1) {
+      for (i in seq_len(p)[-1]) plt <- plotly::add_trace(plt, y = dat[, i],
+                                                         name = .feature.names[i],
+                                                         text = hovernames[, i],
+                                                         marker = list(color = plotly::toRGB(col[i], alpha)))
+    }
   }
 
   # Layout ====
@@ -236,15 +209,9 @@ dplot3.bar <-  function(x,
   tickfont <- list(family = theme$font.family,
                    size = font.size,
                    color = tick.col)
-  .legend <- list(x = legend.xy[1],
-                  y = legend.xy[2],
-                  xanchor = legend.xanchor,
-                  yanchor = legend.yanchor,
-                  bgcolor = "#ffffff00",
-                  font = list(family = theme$font.family,
+  .legend <- list(font = list(family = theme$font.family,
                               size = font.size,
-                              color = legend.col),
-                  orientation = legend.orientation)
+                              color = legend.col))
 
   plt <- plotly::layout(plt,
                         yaxis = list(title = ylab,
@@ -279,7 +246,7 @@ dplot3.bar <-  function(x,
                         paper_bgcolor = bg,
                         plot_bgcolor = plot.bg,
                         margin = margin,
-                        # showlegend = legend,
+                        showlegend = legend,
                         legend = .legend)
 
   # hline ====
@@ -310,7 +277,7 @@ dplot3.bar <-  function(x,
   if (!is.null(filename)) {
     filename <- file.path(filename)
     plotly::plotly_IMAGE(plt, width = file.width, height = file.height,
-                         format = tools::file_ext(filename), out_file = filename)
+                         format = tools::file_ext(file), out_file = filename)
   }
 
   plt

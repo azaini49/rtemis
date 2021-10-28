@@ -2,10 +2,6 @@
 # ::rtemis::
 # 201-21 E.D. Gennatas lambdamd.org
 # add support for multiple vars + group + time bin
-# added option to avoid using color for group
-# todo: hovertext in A2B
-# todo: change group time bin similar to A2b without color
-# :annotate_n ngroups when one group is empty and dropped by plotly
 
 #' Interactive Boxplots & Violin plots
 #'
@@ -56,8 +52,7 @@
 #' dplot3.box(iris[, 1:4])
 #' # A.2 Grouped Box plot
 #' dplot3.box(iris[, 1:4], group = iris$Species)
-#' dplot3.box(iris[, 1:4], group = iris$Species, annotate_n = TRUE)
-#' # B. Boxplot binned by time periods
+#' # B. Boxplot split by time periods
 #' # Synthetic data with an instantenous shift in distributions
 #' set.seed(2021)
 #' dat1 <- data.frame(alpha = rnorm(200, 0), beta = rnorm(200, 2), gamma = rnorm(200, 3))
@@ -66,20 +61,13 @@
 #' startDate <- as.Date("2019-12-04")
 #' endDate <- as.Date("2021-03-31")
 #' time <- seq(startDate, endDate, length.out = 400)
-#' dplot3.box(x[, 1], time, "year", ylab = "alpha")
-#' dplot3.box(x, time, "year", legend.xy = c(0, 1))
-#' dplot3.box(x, time, "quarter", legend.xy = c(0, 1))
-#' dplot3.box(x, time, "month",
-#'            legend.orientation = "h",
-#'            legend.xy = c(0, 1),
-#'            legend.yanchor = "bottom")
+#' dplot3.box(x, time, "year")
+#' dplot3.box(x, time, "quarter")
+#' dplot3.box(x, time, "month")
 #' # (Note how the boxplots widen when the period includes data from both dat1 and dat2)
 #' }
 
-# showlegend in plot_ly so that subplot does not cause repetition of legend
-# known issue: boxmode = "group" works fine in single plots; but when used with subplot,
-# forces separate plots sharing X to shift their boxplots.
-# => rewrite to avoid using boxmode "group" with use_plotly_group = FALSE
+# DEV: horizontal gives wrong data => wrong plots, wrong medians, etc
 
 dplot3.box <- function(x,
                        time = NULL,
@@ -100,9 +88,6 @@ dplot3.box <- function(x,
                        # width = 0,
                        violin.box = TRUE,
                        orientation = "v",
-                       annotate_n = FALSE,
-                       annotate_n_y = 1,
-                       annotate.col = theme$labs.col,
                        xnames = NULL,
                        labelify = TRUE,
                        order.by.fn = NULL,
@@ -111,24 +96,18 @@ dplot3.box <- function(x,
                        legend.col = NULL,
                        legend.xy = NULL,
                        legend.orientation = "v",
-                       legend.xanchor = "auto",
-                       legend.yanchor = "auto",
                        xaxis.type = "category",
                        margin = list(t = 35, pad = 0),
                        automargin.x = TRUE,
                        automargin.y = TRUE,
-                       boxgap = 0, #1/nvars, #.12,
+                       boxgap = NULL,
                        boxgroupgap = NULL,
                        hovertext = NULL,
-                       show_n = FALSE,
-                       boxmode = NULL,
-                       use_plotly_group = FALSE,
                        displayModeBar = TRUE,
                        filename = NULL,
                        file.width = 500,
                        file.height = 500,
-                       print.plot = TRUE,
-                       ...) {
+                       print.plot = TRUE, ...) {
 
   # Dependencies ====
   if (!depCheck("plotly", verbose = FALSE)) {
@@ -137,7 +116,8 @@ dplot3.box <- function(x,
 
   # Arguments ====
   type <- match.arg(type)
-
+  main <- paste0("<b>", main, "</b>")
+  # if (!is.list(x)) x <- list(x)
   # Convert vector or matrix to list
   if (!is.list(x)) {
     # x is vector
@@ -152,8 +132,6 @@ dplot3.box <- function(x,
       names(x) <- .names
     }
   }
-  nvars <- length(x)
-  if (nvars > 1 && !is.null(group) && !is.null(time)) stop("Better use subplot for each variable")
   horizontal <- orientation == "h"
 
   # Order by fn ====
@@ -187,6 +165,7 @@ dplot3.box <- function(x,
     if (labelify) .xnames <- labelify(.xnames)
   }
 
+
   # Colors ====
   if (is.character(palette)) palette <- rtPalette(palette)
   if (is.null(col)) col <- recycle(palette, seq(n.groups))[seq(n.groups)]
@@ -204,7 +183,6 @@ dplot3.box <- function(x,
     }
   }
 
-  if (theme$main.font == 2) main <- paste0("<b>", main, "</b>")
   bg <- plotly::toRGB(theme$bg)
   plot.bg <- plotly::toRGB(theme$plot.bg)
   grid.col <- plotly::toRGB(theme$grid.col)
@@ -228,17 +206,13 @@ dplot3.box <- function(x,
       }
       args <- c(args,
                 list(
-                  type = type,
-                  # name = .xnames[1],
-                  name = if (show_n)
-                    paste0(.xnames[1], " (N=", length(x[[1]]), ")")
-                  else .xnames[1],
-                  line = list(color = plotly::toRGB(col[1])),
-                  fillcolor = plotly::toRGB(col[1], alpha),
-                  marker = list(color = plotly::toRGB(col[1], alpha)),
-                  showlegend = legend
-                  # width = width
-                ))
+                   type = type,
+                   name = .xnames[1],
+                   line = list(color = plotly::toRGB(col[1])),
+                   fillcolor = plotly::toRGB(col[1], alpha),
+                   marker = list(color = plotly::toRGB(col[1], alpha))
+                   # width = width
+      ))
       if (!is.null(hovertext) && n.groups == 1) {
         hovertext <- list(hovertext)
       }
@@ -254,155 +228,45 @@ dplot3.box <- function(x,
           plt <- plotly::add_trace(plt,
                                    x = if (horizontal) x[[i]] else NULL,
                                    y = if (horizontal) NULL else x[[i]],
-                                   # name = .xnames[i],
-                                   name = if (show_n)
-                                     paste0(.xnames[i], " (N=", length(x[[i]]), ")")
-                                   else .xnames[i],
-                                   line = list(color = plotly::toRGB(col[i])),          # box borders
-                                   fillcolor = plotly::toRGB(col[i], alpha),            # box fill
-                                   marker = list(color = plotly::toRGB(col[i], alpha)), # points
+                                   name = .xnames[i],
+                                   line = list(color = plotly::toRGB(col[i])),
+                                   fillcolor = plotly::toRGB(col[i], alpha),
+                                   marker = list(color = plotly::toRGB(col[i], alpha)),
                                    text = if (!is.null(hovertext)) hovertext[[i]] else NULL)
         }
       }
-
-      if (annotate_n) {
-        Nperbox <- Filter(function(i) i > 0, sapply(x, function(j) length(na.exclude(j))))
-        plt |> plotly::add_annotations(xref = 'paper', yref = 'paper',
-                               xanchor = "right",
-                               yanchor = "bottom",
-                               x = 0, y = annotate_n_y,
-                               text = "N =",
-                               font = list(family = theme$font.family,
-                                           size = font.size,
-                                           color = annotate.col),
-                               showarrow = FALSE) |>
-          plotly::add_annotations(xref = 'x', yref = 'paper',
-                          yanchor = "bottom",
-                          # x = seq_len(nvars) - 1,
-                          x = seq_along(Nperbox) - 1,
-                          y = 1,
-                          text = as.character(Nperbox),
-                          font = list(family = theme$font.family,
-                                      size = font.size,
-                                      color = annotate.col),
-                          showarrow = FALSE) -> plt
-      }
     } else {
-      if (use_plotly_group) {
-        # A.2.a. Grouped boxplots with [group] ====
-        # Best to use this for multiple variables x group.
-        # For single variables x group, preferred way it to use split(var, group) => A1
-        if (is.null(legend)) legend <- TRUE
-        dt <- cbind(data.table::as.data.table(x), group = group)
-        dtlong <- data.table::melt(dt[, ID := seq(nrow(dt))], id.vars = c("ID", "group"))
-        if (is.null(ylab)) ylab <- ""
-        args <- list(data = dtlong,
-                     type = type,
-                     x = if (horizontal) ~value else ~variable,
-                     y = if (horizontal) ~variable else ~value,
-                     color = ~group,
-                     colors = col2hex(col),
-                     showlegend = legend)
-        if (type == "box") {
-          args <- c(args, list(quartilemethod = quartilemethod,
-                               boxpoints = boxpoints,
-                               alpha = alpha))
-          if (!is.null(hovertext)) {
-            dtlong <- merge(dtlong, cbind(dt[, .(ID)], hovertext))
-            args$text <- dtlong$hovertext
-          }
-        }
-        if (type == "violin") args$box <- list(visible = violin.box)
-        cataxis <- list(tickvals = 0:(NCOL(dt) - 2),
-                        ticktext = .xnames)
-        plt <- do.call(plotly::plot_ly, args) %>%
-          plotly::layout(boxmode = "group",
-                         xaxis = if (horizontal) NULL else cataxis,
-                         yaxis = if (horizontal) cataxis else NULL)
-      } else {
-        # A.2.b Grouped boxplots with split and loop ====
-        # Replaces A.2.a to allow annotation positioning
-        if (is.null(legend)) legend <- TRUE
-        # dt <- cbind(data.table::as.data.table(x), group = group)
-        dts <- split(data.table::as.data.table(x), group, drop = TRUE)
-
-        if (is.null(ylab)) ylab <- ""
-        if (type == "box") {
-          args <- list(type = "box",
-                       quartilemethod = quartilemethod,
-                       boxpoints = boxpoints,
-                       alpha = alpha)
-        } else {
-          args <- list(type = "violin",
-                       box = list(visible = violin.box))
-        }
-
-        varnames <- names(x)
-        nvars <- length(varnames)
-        ngroups <- length(dts)
-        groupnames <- names(dts)
-        xval <- do.call(paste, expand.grid(groupnames, varnames))
-        # text = xval[i],
-        xval <- factor(xval, levels = xval)
-
-        boxindex <- 0
-
-        # plt <- plotly::plot_ly(type = type) # box or violin
-        plt <- do.call(plotly::plot_ly, args)
-        for (i in seq_along(varnames)) {
-          # loop vars
-          for (j in seq_along(dts)) {
-            # loop groups
-            boxindex <- boxindex + 1
-            plt |> plotly::add_trace(
-              x = if (horizontal) dts[[j]][[i]] else xval[boxindex],
-              y = if (horizontal) xval[boxindex] else dts[[j]][[i]],
-              name = groupnames[j],
-              meta = xval[boxindex],
-              line = list(color = plotly::toRGB(col[j])),
-              fillcolor = plotly::toRGB(col[j], alpha),
-              marker = list(color = plotly::toRGB(col[j], alpha)),
-              showlegend = i == nvars,
-              hoverinfo = "all",
-              legendgroup = groupnames[j])  -> plt
-          }
-        }
-
-        cataxis <- list(type = "category",
-                        tickmode = "array",
-                        tickvals = (mean(seq_len(ngroups)) + 0:(nvars - 1) * ngroups) - 1, # need -1 if type = "category"
-                        ticktext = .xnames,
-                        tickangle = "auto",
-                        automargin = TRUE)
-
-        plt |> plotly::layout(xaxis = if (horizontal) NULL else cataxis,
-                              yaxis = if (horizontal) cataxis else NULL) -> plt
-
-        if (annotate_n) {
-          Nperbox <- Filter(function(i) i > 0,
-                            c(t(sapply(dts, function(i)
-                              sapply(i, function(j) length(na.exclude(j)))))))
-          plt |> plotly::add_annotations(xref = 'paper', yref = 'paper',
-                                         xanchor = "right",
-                                         yanchor = "bottom",
-                                         x = 0, y = annotate_n_y,
-                                         text = "N =",
-                                         font = list(family = theme$font.family,
-                                                     size = font.size,
-                                                     color = annotate.col),
-                                         showarrow = FALSE) |>
-            plotly::add_annotations(xref = 'x', yref = 'paper',
-                                    yanchor = "bottom",
-                                    x = seq_len(nvars*ngroups) - 1,
-                                    y = 1,
-                                    text = as.character(Nperbox),
-                                    font = list(family = theme$font.family,
-                                                size = font.size,
-                                                color = annotate.col),
-                                    showarrow = FALSE) -> plt
+      # A.2 Grouped boxplots with [group] ====
+      if (is.null(legend)) legend <- TRUE
+      dt <- cbind(data.table::as.data.table(x), group = group)
+      dtlong <- data.table::melt(dt[, ID := seq(nrow(dt))], id.vars = c("ID", "group"))
+      if (is.null(ylab)) ylab <- ""
+      args <- list(data = dtlong,
+                   type = type,
+                   x = if (horizontal) ~value else ~variable,
+                   y = if (horizontal) ~variable else ~value,
+                   color = ~group,
+                   colors = col2hex(col)
+                   # width = width
+      )
+      if (type == "box") {
+        args <- c(args, list(quartilemethod = quartilemethod,
+                             boxpoints = boxpoints,
+                             alpha = alpha))
+        if (!is.null(hovertext)) {
+          dtlong <- merge(dtlong, cbind(dt[, .(ID)], hovertext))
+          args$text <- dtlong$hovertext
         }
       }
+      if (type == "violin") args$box <- list(visible = violin.box)
+      cataxis <- list(tickvals = 0:(NCOL(dt) - 2),
+                      ticktext = .xnames)
+      plt <- do.call(plotly::plot_ly, args) %>%
+        plotly::layout(boxmode = "group",
+                       xaxis = if (horizontal) NULL else cataxis,
+                       yaxis = if (horizontal) cataxis else NULL)
     }
+
   } else {
     # B. Time-binned boxplots ====
     time.bin <- match.arg(time.bin)
@@ -411,56 +275,39 @@ dplot3.box <- function(x,
     if (is.null(legend)) legend <- TRUE
 
     dt <- data.table::as.data.table(x)
-    if (!is.null(group)) dt[, group := group]
-    if (!is.null(hovertext)) dt[, hovertext := hovertext]
-    # dt[, timeperiod := factor(switch(time.bin,
-    #                                  year = data.table::year(time),
-    #                                  quarter = paste(data.table::year(time), quarters(time)),
-    #                                  month = paste(data.table::year(time), months(time, TRUE)),
-    #                                  day = time))]
-    dt[, timeperiod := date2factor(time, time.bin)] |>
-      setkey(timeperiod)
+    dt[, timeperiod := factor(switch(time.bin,
+                                     year = data.table::year(time),
+                                     quarter = paste(data.table::year(time), quarters(time)),
+                                     month = paste(data.table::year(time), months(time, TRUE)),
+                                     day = time,
+    ))]
 
-    # Npertimeperiod <- dt[, .N, by = timeperiod]
-    # Npertimeperiod <- dt[, lapply(.SD, function(i) length(na.exclude(i))), by = timeperiod] |>
-    #   setorder()
-    # index by key timeperiod to include N = 0 groups
-    Npertimeperiod <- dt[levels(timeperiod)][, lapply(.SD, function(i) length(na.exclude(i))),
-                                             by = timeperiod] |>
-      setorder()
-    #    timeperiod alpha  beta gamma
-    #        <fctr> <int> <int> <int>
-    # 1:       2019    24    24    24
-    # 2:       2020   302   302   302
-    # 3:       2021    74    74    74
-
-    ## Long data
-    dtlong <- data.table::melt(dt[, ID := .I],
-                               id.vars = c("ID",
-                                           "timeperiod",
-                                           mgetnames(dt, "group", "hovertext")))
+    ## Long data ====
+    dtlong <- data.table::melt(dt[, ID := seq(nrow(dt))], id.vars = c("ID", "timeperiod"))
+    if (!is.null(hovertext)) {
+      dtlong <- merge(dtlong, cbind(dt[, .(ID)], hovertext))
+    }
 
     # group by
-    # if (!is.null(group)) {
-    #   group <- factor(group)
-    #   grouplevels <- levels(group)
-    #   transforms <- list(
-    #     list(
-    #       type = 'groupby',
-    #       groups = group,
-    #       styles =
-    #         lapply(seq_along(grouplevels), function(i) {
-    #           list(target = grouplevels[i],
-    #                value = list(line = list(color = plotly::toRGB(col[i])),
-    #                             fillcolor = plotly::toRGB(col[i], alpha),
-    #                             marker = list(color = plotly::toRGB(col[i], alpha)))
-    #           )
-    #         })
-    #     )
-    #   )
-    # } else {
-    #   transforms <- NULL
-    # }
+    if (!is.null(group)) {
+      group <- factor(group)
+      grouplevels <- levels(group)
+      transforms <- list(
+        list(
+          type = 'groupby',
+          groups = group,
+          styles =
+            lapply(seq_along(grouplevels), function(i) {
+              list(target = grouplevels[i], value = list(line = list(color = plotly::toRGB(col[i])),
+                                                         fillcolor = plotly::toRGB(col[i], alpha),
+                                                         marker = list(color = plotly::toRGB(col[i], alpha)))
+              )
+            })
+        )
+      )
+    } else {
+      transforms <- NULL
+    }
 
     if (is.null(group)) {
       args <- list(data = dtlong,
@@ -468,18 +315,15 @@ dplot3.box <- function(x,
                    x = if (horizontal) ~value else ~timeperiod,
                    y = if (horizontal) ~timeperiod else ~value,
                    color = ~variable,
-                   colors = col2hex(col),
-                   showlegend = legend)
+                   colors = col2hex(col))
     } else {
       args <- list(data = dtlong,
                    type = type,
                    x = if (horizontal) ~value else ~timeperiod,
                    y = if (horizontal) ~timeperiod else ~value,
-                   color = ~group,
-                   colors = col2hex(col),
-                   showlegend = legend)
+                   transforms = transforms)
     }
-
+    # args$width <- width
     if (!is.null(hovertext)) args$text <- dtlong$hovertext
 
     if (type == "box") {
@@ -488,36 +332,9 @@ dplot3.box <- function(x,
     }
     if (type == "violin") args$box <- list(visible = violin.box)
 
-    plt <- do.call(plotly::plot_ly, args)
-    if (!is.null(group) | nvars > 1) {
-      plt |> plotly::layout(boxmode = "group") -> plt
-    }
-
-    ## annotations ====
-    if (is.null(group) & annotate_n) {
-      # Nperbox <- Filter(function(i) i > 0, Npertimeperiod[[2]])
-      Nperbox <- Npertimeperiod[[2]] # include zeros
-      plt |> plotly::add_annotations(xref = 'paper', yref = 'paper',
-                                     xanchor = "right",
-                                     yanchor = "bottom",
-                                     x = 0, y = annotate_n_y,
-                                     text = "N =",
-                                     font = list(family = theme$font.family,
-                                                 size = font.size,
-                                                 color = annotate.col),
-                                     showarrow = FALSE) |>
-        plotly::add_annotations(xref = 'x', yref = 'paper',
-                                yanchor = "bottom",
-                                x = seq_along(Nperbox) - 1,
-                                y = 1,
-                                text = paste(Nperbox),
-                                font = list(family = theme$font.family,
-                                            size = font.size,
-                                            color = annotate.col),
-                                showarrow = FALSE) -> plt
-    }
-
-  } # /time-binned boxplots
+    plt <- do.call(plotly::plot_ly, args) %>%
+      plotly::layout(boxmode = "group")
+  }
 
   # layout ====
   f <- list(family = theme$font.family,
@@ -528,9 +345,6 @@ dplot3.box <- function(x,
                    color = tick.col)
   .legend <- list(x = legend.xy[1],
                   y = legend.xy[2],
-                  xanchor = legend.xanchor,
-                  yanchor = legend.yanchor,
-                  bgcolor = "#ffffff00",
                   font = list(family = theme$font.family,
                               size = font.size,
                               color = legend.col),
@@ -563,6 +377,7 @@ dplot3.box <- function(x,
                         paper_bgcolor = bg,
                         plot_bgcolor = plot.bg,
                         margin = margin,
+                        showlegend = legend,
                         legend = .legend,
                         boxgap = boxgap,
                         boxgroupgap = boxgroupgap)
@@ -576,10 +391,10 @@ dplot3.box <- function(x,
   if (!is.null(filename)) {
     filename <- file.path(filename)
     plotly::plotly_IMAGE(plt, width = file.width, height = file.height,
-                         format = tools::file_ext(filename), out_file = filename)
+                         format = tools::file_ext(file), out_file = filename)
   }
 
-  # if (print.plot) suppressWarnings(print(plt))
-  if (print.plot) plt else invisible(plt)
+  if (print.plot) suppressWarnings(print(plt))
+  invisible(plt)
 
 } # rtemis::dplot3.box.R
