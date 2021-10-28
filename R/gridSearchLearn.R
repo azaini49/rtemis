@@ -37,7 +37,7 @@
 #' @param ... Additional arguments to be passed to \link{resample}
 #'
 #' @author E.D. Gennatas
-#' @keywords internal
+#' @noRd
 
 gridSearchLearn <- function(x, y, mod,
                             grid.params,
@@ -55,13 +55,13 @@ gridSearchLearn <- function(x, y, mod,
                             grid.verbose = FALSE,
                             n.cores = rtCores, ...) {
 
-  # [ INTRO ] ====
+  # Intro ====
   start.time <- intro(verbose = verbose,
                       call.depth = call.depth,
                       message = "Running grid search...",
                       newline.pre = TRUE)
 
-  # [ ARGUMENTS ] ====
+  # Arguments ====
   if (missing(x) | missing(y)) {
     print(args(gridSearchLearn))
     stop("Input missing")
@@ -70,10 +70,10 @@ gridSearchLearn <- function(x, y, mod,
   n.resamples <- resample.rtset$n.resamples
   n.cores <- as.numeric(n.cores)[1]
 
-  # [ DATA ] ====
+  # Data ====
   x <- as.data.frame(x)
 
-  # [ GRID ] ====
+  # Grid ====
   # Filter out any grid.params with "NULL" value: expand.grid will fail otherwise.
   # Since these will not be present in best.tune, assignment to the non-existent named elements will result in NULL,
   # as required. This is needed for functions with parameters that can take NULL value
@@ -87,7 +87,7 @@ gridSearchLearn <- function(x, y, mod,
   learner <- modSelect(mod, fn = FALSE)
   res <- resample(y = y, rtset = resample.rtset, verbose = verbose)
 
-  # [ {GRID FUNCTION} ] ====
+  # {Grid function} ====
   learner1 <- function(index, learner,
                        x, y,
                        res,
@@ -133,7 +133,7 @@ gridSearchLearn <- function(x, y, mod,
     out1
   }
 
-  # [ GRID RUN ] ====
+  # Grid run ====
   if (verbose) parameterSummary(grid.params, fixed.params, title = "Search parameters")
   if (verbose) msg("Tuning", modSelect(mod, desc = TRUE), "by", search.type, "grid search:")
   if (verbose) msg(n.resamples, " resamples; ", NROW(param.grid), " models total; running on ",
@@ -154,7 +154,7 @@ gridSearchLearn <- function(x, y, mod,
                                 save.mod = save.mod,
                                 cl = n.cores)
 
-  # [ METRIC ] ====
+  # Metric ====
   type <- grid.run[[1]]$type
   if (is.null(metric)) {
     if (type == "Classification") {
@@ -162,37 +162,23 @@ gridSearchLearn <- function(x, y, mod,
     } else if (type == "Regression") {
       metric <- "MSE"
     } else {
-      #metric <- "Concordance"
-      metric <- "concordance.concordant"
+      metric <- "Concordance"
     }
   }
 
   if (is.null(maximize)) {
-    maximize <- if (metric %in% c("Accuracy", "Balanced Accuracy", "Concordance", "concordance.concordant")) TRUE else FALSE
+    maximize <- if (metric %in% c("Accuracy", "Balanced Accuracy", "Concordance")) TRUE else FALSE
   }
   select.fn <- if (maximize) which.max else which.min
   verb <- if (maximize) "maximize" else "minimize"
 
-  # [ AGGREGATE ] ====
+  # Aggregate ====
   n.params <- length(grid.params)
   # Average test errors
-  if (type %in% c("Regression")) {
+  if (type %in% c("Regression", "Survival")) {
     error.test.all <- as.data.frame(t(sapply(grid.run, function(r) unlist(r$error.test))))
   } else if (type == "Classification") {
     error.test.all <- as.data.frame(t(sapply(grid.run, function(r) unlist(r$error.test$Overall))))
-  } else if (type == "Survival") {
-    error.test.all <- as.data.frame(t(sapply(grid.run, function(r) unlist(r$error.test))))
-    error.test.all <- transform(error.test.all, concordance.concordant = as.numeric(concordance.concordant), 
-                                stats.concordant = as.numeric(stats.concordant),
-                                stats.discordant = as.numeric(stats.discordant),
-                                stats.tied.risk = as.numeric(stats.tied.risk),
-                                stats.tied.time = as.numeric(stats.tied.time),
-                                `stats.std(c-d)` = as.numeric(`stats.std(c-d)`),
-                                `std.err.std(c-d)` = as.numeric(`std.err.std(c-d)`),
-                                n = as.numeric(n))
-    #remove call
-    error.test.all <- subset(error.test.all, select = -call)
-    metric <- "concordance.concordant"
   }
   error.test.all$param.id <- rep(seq_len(n.param.combs), each = n.resamples)
   error.test.mean.by.param.id <- aggregate(error.test.all,
@@ -226,7 +212,7 @@ gridSearchLearn <- function(x, y, mod,
   # '- GLMNET ====
   if (learner == "s.GLMNET") {
     if (is.null(grid.params$lambda)) {
-      # if lambda was NULL, cv.glmnet was run and optimall lambda was estimated
+      # if lambda was NULL, cv.glmnet was run and optimal lambda was estimated
       lambda.all <- data.frame(lambda = plyr::laply(grid.run, function(x) x[[fixed.params$which.cv.lambda]]))
       lambda.all$param.id <- rep(1:n.param.combs, each = n.resamples)
       lambda.by.param.id <- aggregate(lambda ~ param.id, lambda.all,
@@ -239,15 +225,13 @@ gridSearchLearn <- function(x, y, mod,
   # '- LINAD ====
   if (learner %in% c("s.LINAD", "s.LINOA")) {
     # ERROR
-    est.n.leaves.all <- data.frame(n.leaves = plyr::laply(grid.run, function(x) x$est.n.leaves))
+    est.n.leaves.all <- data.frame(n.leaves = plyr::laply(grid.run,
+                                                          function(x) ifelse(length(x$est.n.leaves) == 0, 1, x$est.n.leaves)))
     est.n.leaves.all$param.id <- rep(seq_len(n.param.combs), each = n.resamples)
-    
     est.n.leaves.by.param.id <- aggregate(n.leaves ~ param.id, est.n.leaves.all,
                                           error.aggregate.fn)
     tune.results <- cbind(n.leaves = round(est.n.leaves.by.param.id$n.leaves), tune.results)
     n.params <- n.params + 1
-    
-    
   }
 
   # '- LIHADBOOST ====
@@ -266,7 +250,8 @@ gridSearchLearn <- function(x, y, mod,
                             drop = FALSE]
   if (verbose) parameterSummary(best.tune, title = paste("Best parameters to", verb, metric))
 
-  # [ OUTRO ] ====
+
+  # Outro ====
   outro(start.time, verbose = verbose)
   gs <- list(type = search.type,
              p = randomized.p,
@@ -295,8 +280,9 @@ gridSearchLearn <- function(x, y, mod,
 #' argument has more than one assigned values, the function returns TRUE, otherwise FALSE. This can
 #' be used to check whether \link{gridSearchLearn} must be run.
 #'
-#' The idea is that if you know which parameter values you want to use, you define them
-#'   e.g. \code{alpha = 0, lambda = .2}. If you don't know, you enter the set of values to be tested,
+#' The idea is that if you know which parameter values you want to use, you define them directly
+#'   e.g. \code{alpha = 0, lambda = .2}.
+#' If you don't know, you enter the set of values to be tested,
 #'   e.g. \code{alpha = c(0, .5, 1), lambda = seq(.1, 1, .1)}.
 #' @param ... Parameters; will be converted to a list
 

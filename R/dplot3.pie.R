@@ -14,7 +14,7 @@
 #' either \code{rownames(x)}, or the first column of \code{x} if \code{ncol(x) = 2}
 #' @param textinfo Character: Info to show over each slince: "label", "percent", "label+percent" Default = "label+percent"
 #' @param main Character: Plot title. Default = NULL, which results in colnames(x)[1],
-#' @param theme String: "light", "dark". Default = \code{getOption("rt.theme", "light")}
+#' @param theme Character: "light", "dark". Default = \code{getOption("rt.theme", "light")}
 #' @author E.D. Gennatas
 #' @export
 #' @examples
@@ -49,7 +49,7 @@ dplot3.pie <-  function(x,
                         file.width = 500,
                         file.height = 500, ...) {
 
-  # [ Dependencies ] ====
+  # Dependencies ====
   if (!depCheck("plotly", verbose = FALSE)) {
     cat("\n"); stop("Please install dependencies and try again")
   }
@@ -92,7 +92,7 @@ dplot3.pie <-  function(x,
   if (is.null(col)) col <- palette[seq_len(p)]
   if (length(col) < p) col <- rep(col, p/length(col))
 
-  # [ Theme ] ====
+  # Theme ====
   extraargs <- list(...)
   if (is.character(theme)) {
     theme <- do.call(paste0("theme_", theme), extraargs)
@@ -122,7 +122,7 @@ dplot3.pie <-  function(x,
                          marker = list(colors = unlist(col),
                                        line = list(color = sep.col, width = 1)))
 
-  # '- layout ====
+  ## layout ====
   f <- list(family = theme$font.family,
             size = font.size,
             color = labs.col)

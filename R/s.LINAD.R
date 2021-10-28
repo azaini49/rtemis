@@ -66,15 +66,16 @@ s.LINAD <- function(x, y = NULL,
                     grid.resample.rtset = rtset.resample("kfold", 5),
                     grid.search.type = "exhaustive",
                     save.gridrun = FALSE,
-                    grid.verbose = FALSE,
+                    grid.verbose = TRUE,
+                    select.leaves.smooth = TRUE,
                     cluster = FALSE,
                     keep.x = FALSE,
                     simplify = TRUE,
                     cxrcoef = FALSE,
                     n.cores = rtCores,
                     .preprocess = NULL,
-                    verbose = FALSE,
-                    plot.tuning = FALSE,
+                    verbose = TRUE,
+                    plot.tuning = TRUE,
                     verbose.predict = FALSE,
                     trace = 1,
                     x.name = NULL,
@@ -88,7 +89,7 @@ s.LINAD <- function(x, y = NULL,
                     save.mod = FALSE,
                     .gs = FALSE) {
 
-  # [ INTRO ] ====
+  # Intro  ====
   if (missing(x)) {
     print(args(s.LINAD))
     return(invisible(9))
@@ -103,19 +104,19 @@ s.LINAD <- function(x, y = NULL,
   mod.name <- "LINAD"
   leaf.model <- match.arg(leaf.model)
 
-  # [ DEPENDENCIES ] ====
+  # Dependencies  ====
   # ENH: deps for lincoef
   if (!depCheck("glmnet", "rpart", verbose = FALSE)) {
     cat("\n"); stop("Please install dependencies and try again")
   }
 
-  # [ ARGUMENTS ] ====
+  # Arguments  ====
   if (is.null(x.name)) x.name <- getName(x, "x")
   if (is.null(y.name)) y.name <- getName(y, "y")
   lin.type <- match.arg(lin.type)
   # if (.gs && nvmax == 0) lin.type = "none"
 
-  # [ DATA ] ====
+  # Data  ====
   dt <- dataPrepare(x, y, x.test, y.test,
                     ipw = ipw, ipw.type = ipw.type,
                     upsample = upsample,
@@ -166,7 +167,7 @@ s.LINAD <- function(x, y = NULL,
     nvmax <- Filter(function(z) z <= NCOL(x), nvmax)
   }
 
-  # [ GRID SEARCH ] ====
+  # Grid Search  ====
   if (metric == "auto") {
     if (type == "Classification") {
       metric <- "Balanced Accuracy"
@@ -174,6 +175,9 @@ s.LINAD <- function(x, y = NULL,
     } else if (type == "Regression") {
       metric <- "MSE"
       if (is.null(maximize)) maximize <- FALSE
+    } else {
+      metric <- "Concordance"
+      maximize <- TRUE
     }
   }
 
@@ -246,6 +250,9 @@ s.LINAD <- function(x, y = NULL,
     # Return special from gridSearchLearn
     max.leaves <- gs$best.tune$n.leaves
 
+    # if tuning fails
+    if (length(lambda) == 0) lambda = .05
+
     # Now ready to train final full model
     .gs <- FALSE
     lookback <- FALSE
@@ -254,7 +261,7 @@ s.LINAD <- function(x, y = NULL,
   }
   if (!is.null(force.max.leaves)) max.leaves <- force.max.leaves
 
-  # [ shytreegamleaves ] ====
+  # shytreegamleaves  ====
   if (.gs) {
     if (lookback) {
       x.valid <- x.test
@@ -269,9 +276,10 @@ s.LINAD <- function(x, y = NULL,
 
   if (length(nvmax) == 1 && nvmax == 0) lin.type <- "none"
 
-
+  if (length(max.leaves) == 0) max.leaves <- 1
   mod <- shytreegamleaves(x, y,
                           x.valid = x.valid, y.valid = y.valid,
+                          type = type,
                           lookback = lookback,
                           max.leaves = max.leaves,
                           gamleaves = leaf.model == "spline",
@@ -296,6 +304,7 @@ s.LINAD <- function(x, y = NULL,
                           lin.type = lin.type,
                           cv.glmnet.nfolds = cv.glmnet.nfolds,
                           which.cv.glmnet.lambda = which.cv.glmnet.lambda,
+                          select.leaves.smooth = select.leaves.smooth,
                           verbose = verbose,
                           plot.tuning = plot.tuning,
                           trace = trace)
@@ -357,7 +366,7 @@ s.LINAD <- function(x, y = NULL,
                      resample.seed = resample.seed,
                      plot.tuning = plot.tuning)
 
-  # [ FITTED ] ====
+  # Fitted  ====
   if (trace > 1) msg("Getting fitted values...")
   if (type == "Classification") {
     .fitted <- predict(mod, x, type = "all")
@@ -367,10 +376,16 @@ s.LINAD <- function(x, y = NULL,
     fitted <- predict(mod, x)
     fitted.prob <- NULL
   }
-  error.train <- modError(y, fitted)
+  
+  if (type == "Survival") {
+    error.train <- modError(y, -fitted)
+  } else {
+    error.train <- modError(y, fitted)
+  }
+  
   if (verbose) errorSummary(error.train)
 
-  # [ PREDICTED ] ====
+  # Predicted  ====
   predicted <- predicted.prob <- error.test <- NULL
   if (!is.null(x.test)) {
     if (trace > 1) msg("Getting predicted values...")
@@ -391,12 +406,17 @@ s.LINAD <- function(x, y = NULL,
     }
 
     if (!is.null(y.test)) {
-      error.test <- modError(y.test, predicted)
+      if (type == "Survival") {
+        error.test <- modError(y.test, -predicted)
+      } else {
+        error.test <- modError(y.test, predicted)
+      }
+      
       if (verbose) errorSummary(error.test)
     }
   }
 
-  # [ OUTRO ] ====
+  # Outro  ====
   varimp <- NULL
   # varimp <- if (lin.type == "none") {
   #   numeric()

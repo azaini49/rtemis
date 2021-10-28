@@ -2,6 +2,7 @@
 # ::rtemis::
 # 2019 E.D. Gennatas lambdamd.org
 # TIP: Use plotly::schema() to explore arguments/parameters to plotly functions
+# todo: figure out why list is reordered with ridge
 
 #' Interactive Univariate Plots
 #'
@@ -395,7 +396,7 @@ dplot3.x <- function(x,
   if (!is.null(filename)) {
     filename <- file.path(filename)
     plotly::plotly_IMAGE(plt, width = file.width, height = file.height,
-                         format = tools::file_ext(file), out_file = filename)
+                         format = tools::file_ext(filename), out_file = filename)
   }
   plt
 
