@@ -1265,3 +1265,4 @@ surv.resid <- function(y, Fval) {
 }
 
 surv.loss <- function(y, pred) modError(y, pred)$Concordance
+
